@@ -1,10 +1,11 @@
 # okc: problem=muse_bf16_proj
+# scored copy of check 799b9e709ff0432f; comment-only
 # ethduke (Nov 1): keell0renz/muse-open-kernel-challenge @ 8e30e1b (Apache-2.0; NOTICE and every attribution line below retained).
 # Change by ethduke: prepare() self-tests every scored-cell pick of _TABLE (normal and 30x-outlier inputs against an FP64
 # reference, the judge's tolerances) and sends a cell whose pick raises or misses tolerance to _DEFAULT, so a bad build
 # of one public kernel on a judge node costs that cell's speed instead of the run. Kernels theirs.
 # + per-thread primary CUDA context bind around kernel_fn (team keell0renz, 2026-10-31: a state first called from a fresh OS thread failed cuTensorMapEncodeTiled 201 at m 16/32; pattern from alygg77 / Matsvei)
-# + v6 (team keell0renz): every m in 2..384 that is not one of the scored 1 / 8 / 16 / 32 / 128 / 256 gets a per-(layer, m) route built and validated in prepare() (pinned kernels called with the real m, rq plans with TMA zero-fill, cuBLAS on the K-major weight, the m=256 cuBLASLt pin); the scored m take exactly the v5 path
+# + v6 (team keell0renz, E330+): every m in 2..384 that is not one of the scored 1 / 8 / 16 / 32 / 128 / 256 gets a per-(layer, m) route built and validated in prepare() (pinned kernels called with the real m, rq plans with TMA zero-fill, cuBLAS on the K-major weight, the m=256 cuBLASLt pin); the scored m take exactly the v5 path
 # + router m=128 rk K-split 16 (grid 128, was 12) from the S sweep (team keell0renz)
 # + alygg77/okc-muse-spark-kernels muse_bf16_proj.py (Apache-2.0): pinned cuBLASLt m=256 plans + ctypes wrapper (pins and CUDA-context bind by Matsvei 'matvey'), routed per cell: qkv_gate:256, o:256, pooler:256, unpooler:256 (team keell0renz)
 # Per-shape dispatcher over public kernels: chenwainuo/okc (Apache-2.0),  vjeux/okc-2026 (Apache-2.0), NathenFernandes/muse-bf16-proj (MIT); each file's code is kept verbatim inside a factory function, picked per (layer, m) from judge profiles (team keell0renz).
@@ -33,7 +34,7 @@ pw18 (= pw17 with codec E v3): r6 unchanged (its 12-bit paths, bake and dispatch
 bit-position chain has no memory access. The exponent pair value comes from a 256-entry smem LUT (single or lane-replicated)
 off the chain. There are 1, 2 or 4 independent substreams per lane, and refill words come through a conflict-free
 [substream][slot][lane] 4 B cp.async ring and are prefetched. 11.07 / 11.17 / 11.32 bits/weight (K 1 / 2 / 4) against 12
-(layout v3). Each pack is proven bit-exact by the reference unpacker before any E kernel runs. Each
+(proj_rsi/tools/CODEC_E_LAYOUT.md v3). Each pack is proven bit-exact by the reference unpacker before any E kernel runs. Each
 path is validated like every second-bake path and timed against r6's pick (BAKE / PICK). PROBE ecod lines time the best E path
 against r6 on pooler m=1 and m=16, alternated.
 pw29: pw23 plus wgmma router paths at m = 128 / 256 (rwk, its own sm_90a extension), baked against pw23's rs / rp / rv
@@ -626,8 +627,8 @@ __device__ __forceinline__ void redemit(const G& p, int idx, int row0, float4 v,
 __device__ __forceinline__ void add4(float4& a, const float4& b) { a.x += b.x; a.y += b.y; a.z += b.z; a.w += b.w; }
 __device__ __forceinline__ bool live(int idx, int MT, int m) { return ((idx >> 5) % MT) * 8 + 2 * (idx & 3) < m; }
 
-// ---- pw18: codec E v3, routine copied from the codec_e tool (CODEC_E_CUH) ----
-// ---- codec E v3 device decode ------------------------------------------------
+// ---- pw18: codec E v3, routine copied from proj_rsi/tools/codec_e.py CODEC_E_CUH ----
+// ---- codec E v3 device decode (proj_rsi/tools/CODEC_E_LAYOUT.md v3) ------------------------------------------------
 // K = 1, 2 or 4 independent substreams per lane; substream s owns steps j in [s*4/K, (s+1)*4/K) of every unit.
 // Per lane and substream: lo, hi = 64-bit bit buffer (next code at bit 0 of lo); V = valid bits mod 128 (bits 8+ carry
 // garbage from V -= len; only (V & 0x60) and (V & 31) are read); pb = bytes taken from the substream's lane stream;
@@ -2146,11 +2147,11 @@ int64_t gvregs(int64_t inst, torch::Tensor W, torch::Tensor W2, torch::Tensor x,
     # candidates per (layer key, MT): (WR, WK, KU, S, RT, XS) -> kernel variants V (bit 0: 9-op add decode, else 11-op table
     # decode; bit 1: rolled K loop); H200 v15 judge: the v14 kernel (V 0) was faster at deep K, the rolled/9-op one (V 3) at m32
     _0, _1, _01 = (0,), (1,), (0, 1)
-    GVC = {  # pw52 (wf_stack3): CONSERVATIVE bake. The proven pick (pw49s's judge run, scored
+    GVC = {  # pw52 (wf_stack3): CONSERVATIVE bake. The proven pick (pw49s's judge run, job faf47019b8fc40fa, scored
         # 3155.7 = the best official draw) is listed FIRST in every group and is the baseline the pick rule compares
         # against (GVMARGIN 0.97 at m <= 32): a variant replaces it only if it is >= 3% faster in this bake. FACTS 14: the
-        # judge's sub-1% in-bake flips measured 0.2-2.2 us WORSE officially, so the entries pw51s's judge bake (scored
-        # 3222.0) preferred by < 3% are out of the lists (and out of the build).
+        # judge's sub-1% in-bake flips measured 0.2-2.2 us WORSE officially, so the entries pw51s's judge bake (job
+        # a5a8187115774027, scored 3222.0) preferred by < 3% are out of the lists (and out of the build).
         #   dropped vs pw51s: o m1/m8 ST 3 (1.5%/0.7%), o m1/m8 minBlocks 2 (1.5%/worse), o m16 minBlocks 2 (0.9%),
         #   qkv m1 V3 (worse) and XS 0 on the winner (worse), unpooler m16 WR 2 (0.2%) and minBlocks 2 (worse),
         #   unpooler_s ST 3 (2.6% -> ST < 4 at small m is the FACTS-14 loser).
@@ -2192,7 +2193,7 @@ int64_t gvregs(int64_t inst, torch::Tensor W, torch::Tensor W2, torch::Tensor x,
         ("router", 4): [((1, 4, 2, 16, 1, 0), _0), ((1, 8, 2, 8, 1, 0), _0), ((1, 8, 1, 16, 1, 0), _0),
                         ((1, 4, 2, 16, 1, 0), (1 << 26,)), ((1, 4, 4, 8, 1, 0), _0)],
     }
-    # pw52: the proven pick per bake group = the entry pw49s's judge run picked. The pick rule keeps it
+    # pw52: the proven pick per bake group = the entry pw49s's judge run (faf47019b8fc40fa) picked. The pick rule keeps it
     # unless another entry is GVMARGIN faster in this bake; "v12" = the r6 path (no gv pick, unchanged).
     PROVEN_GV = {
         ("qkv_gate", 1): "1.1.1.2.16.8.1.1.2.1", ("qkv_gate", 8): "1.1.1.2.16.8.1.1.2.1",
@@ -2239,7 +2240,7 @@ int64_t gvregs(int64_t inst, torch::Tensor W, torch::Tensor W2, torch::Tensor x,
     # cluster DSMEM), V 5 = same kernel with the global last-arriver reduction (no cluster). Rows per CTA = 16 WR RT.
     GX = True
     GXP = []
-    GX11 = False  # pw17: pw11's wide-row gx paths never won; not built
+    GX11 = False  # pw17: pw11's wide-row gx paths never won (checks 824f32ce, f1e6a186, f03e2e77); not built
     for _ms, _xs in (((1, 8), 0), ((16, 32), 2)):
         for _wr in (9, 8):  # 144 rows: 16 x 8 = 128 CTAs; 128 rows: 2304 = 18 x 128 -> 144 CTAs
             for _ab, _v in (("a", 1), ("b", 5)):
@@ -2262,7 +2263,7 @@ int64_t gvregs(int64_t inst, torch::Tensor W, torch::Tensor W2, torch::Tensor x,
 
 
     # pw12: the same kernels with W through a per-warp cp.async.bulk smem ring (V bit 3; slots 4/8; chunks per slot 1/2).
-    # Geometries: r6's judge-picked one per (layer, bucket), r6's 16-warp pooler alternative, and
+    # Geometries: r6's judge-picked one per (layer, bucket) (job 23cecdef1bb54c9e), r6's 16-warp pooler alternative, and
     # pw11's wide-row global-reduction geometries. An 8th geo field forces r6's register x-ring depth ST.
     def _bv(v, ns, cu=1, fence=False):
         return v | 8 | ({2: 0, 4: 1, 8: 2, 16: 3}[ns] << 4) | ({1: 0, 2: 1, 4: 2}[cu] << 6) | (0 if fence else 256)
@@ -2335,7 +2336,7 @@ int64_t gvregs(int64_t inst, torch::Tensor W, torch::Tensor W2, torch::Tensor x,
                               ("rk-s16w8", (2, 1, 8, 1, 16, 1, 0, 1), (8, 16, 32), "z"),      # 256 CTAs x 256 thr, one chunk per warp
                               ("rk-s16w8", (2, 1, 8, 1, 16, 1, 0, 1), (8, 16), "x"),          # critic (pw27h): the x variant at m=32 is 272 CTAs > 264 resident slots
                               ("rk-s32", (2, 1, 4, 1, 32, 1, 0, 1), (8, 16), "x"),          # 512 CTAs x 128 thr
-                              # wf_jsweep2: judge rk bake has x > z by 0.19 at s16w8 and all four
+                              # wf_jsweep2: judge rk bake (job 1f6b5678b9994e38) has x > z by 0.19 at s16w8 and all four
                               # shipped rk shapes inside 0.55 us at m=8 -> 16 warps (one chunk per warp). rk-s8x was +5.4%
                               # on the box (8.06 vs 7.65) -> dropped.
                               ("rk-s16w16", (2, 1, 16, 1, 8, 1, 0, 1), (8,), "z")):
@@ -2351,14 +2352,14 @@ int64_t gvregs(int64_t inst, torch::Tensor W, torch::Tensor W2, torch::Tensor x,
     # 72 CTAs x 1024 thr = 0.55 waves at both m=1 and m=8), so this registers the one feasible "all 132 SMs in one wave with
     # the same loads in flight per SM" configuration: 144 CTAs x 512 thr at 2 CTAs/SM = 32 warps/SM on 132 SMs (16 rows per
     # CTA, the same instance GVC[("qkv_gate", 1)] already builds -> no new kernel instance, no prepare-time cost).
-    # Not registered (measured): a balanced 132-CTA (60x18 + 72x17 rows) or
+    # Not registered (measured, see proj_rsi/candidates/wf_qkv2/NOTES.md): a balanced 132-CTA (60x18 + 72x17 rows) or
     # 128-CTA (18 rows) split is infeasible - the 12-bit pack interleaves 16 W rows into 3 uint4/lane (MMA m16n8k16 A
     # fragment), so the row granularity is fixed at 16 rows, 2304 = 144 tiles, and 132 does not divide 144; and
     # 144 CTAs x 1024 thr (WK 32 / KU 4, 1 CTA/SM, 1.09 waves) is +2.3 us on the box (wf_qkv1 b1: 14.10 vs 11.81).
     GXP += [("q144k16", "qkv_gate", (1, 8), (1, 1, 16, 8, 1, 1, 2), 1 | 2 << 12)]
 
 
-    # pw14 PROBE ladder on r6's own gv (judge-picked geometries), never registered as paths:
+    # pw14 PROBE ladder on r6's own gv (judge-picked geometries of job 23cecdef1bb54c9e), never registered as paths:
     # (layer, MT, geo (FMT, WR, WK, KU, S, RT, XS[, ST]), V, step). LAD (V bits 9-11) 1..4 = steps L0..L3; L4 = r6's real
     # pick, timed separately. capNN = the full kernel with the __launch_bounds__ minBlocks override (V bits 12-14).
     GL_P = (1, 2, 16, 8, 1, 1, 0)
@@ -2933,7 +2934,7 @@ int64_t lt_mm(torch::Tensor x, torch::Tensor w, torch::Tensor wt, torch::Tensor 
 
     def prepare(weights):
         st = {}
-        if weights["qkv_gate"].device.type != "cuda":  # pw11: CPU (CPU check) runs the plain torch math
+        if weights["qkv_gate"].device.type != "cuda":  # pw11: CPU (proj_rsi cpu-check) runs the plain torch math
             return {"cpu": True, "raw": dict(weights)}
         rqt = _rqstart() if RQ else None  # rs128: compile overlapped with r6's phase (CPU only)
         rqt2 = _rqstart(RQPROD2, _rqmod2, _rqthr2, "rq32") if RQ and RQS else None  # rs32: m = 16 / 32 instances
@@ -3350,7 +3351,7 @@ void nop(torch::Tensor out, int64_t blocks, int64_t threads);
 
 
     # ---------------------------------------------------------------- pw18: codec E v3 packer + reference unpacker
-    # (copied verbatim from the codec_e tool; layout v3)
+    # (copied verbatim from proj_rsi/tools/codec_e.py; spec proj_rsi/tools/CODEC_E_LAYOUT.md v3)
     ESC_MAX = 4e-4          # target escape rate (weights); keeps the 32-entry per-warp list far from overflow
     LMAX = 8                # code length limit: 4 pairs per step <= 32 bits (one refill per step suffices)
     PK = 3                  # v3: the first PK bits of a code (LSB-first) determine its length (8-entry byte table, one PRMT)
@@ -3880,7 +3881,7 @@ void nop(torch::Tensor out, int64_t blocks, int64_t threads);
     # x / hi / lo tiles in 128B-swizzle K-major atoms (8 rows x 128 B, SBO 1024) read by both wgmma descriptors; per k16
     # step two wgmmas (hi, lo) into the same fp32 accumulators. Epilogue: accumulators -> smem [tok][68] -> 16-B
     # red.global.add.v4.f32 into the output zeroed by a memset node (half pw23's v2 op count). Emulated bit-exact by
-    # an emulator (layouts, descriptors, ring reuse, epilogue, partial second block).
+    # proj_rsi/tools/rw_emu.py (layouts, descriptors, ring reuse, epilogue, partial second block).
     RWCU = r"""
 #include <torch/extension.h>
 #include <ATen/cuda/CUDAContext.h>
@@ -5146,7 +5147,7 @@ int64_t rwrun(int64_t v, torch::Tensor x, torch::Tensor hi, torch::Tensor lo, to
 
     RQKS = {"pooler": 4, "unpooler": 2, "o": 2, "qkv_gate": 7}  # one-wave KS grid: N/128 x KS <= 132
     # the extension the submission builds: the box's favoured instances plus the judge's pick (s4s5z: no L2 hints won on the
-    # H200 at all three m=128 shapes); <= 6 timed paths per layer
+    # H200 at all three m=128 shapes, job 846e25d9df09433f); <= 6 timed paths per layer
     RQPROD = ["s4s5z", "s4s5hz", "s4s5hze", "d2s5hze", "n256s4hz", "n256s5hz", "n256s5z", "s4s5zEH", "s4s5hzEH"]
     RQI = {v[0]: i for i, v in enumerate(RQV)}
     RQCUR = {RQI[n] for n in ("s4s5zw", "s4s5hzw", "d2s5hzwP", "s4s5hzwP", "t32s5hzw", "t32s6hzw", "t32s5zw", "h32s5hzw", "h32s4hzw",
@@ -6217,7 +6218,7 @@ int64_t rqrun(int64_t v, torch::Tensor W, torch::Tensor x, torch::Tensor out, to
 
     RQKS = {"pooler": 4, "unpooler": 2, "o": 2, "qkv_gate": 7}  # one-wave KS grid: N/128 x KS <= 132
     # the extension the submission builds: the box's favoured instances plus the judge's pick (s4s5z: no L2 hints won on the
-    # H200 at all three m=128 shapes); <= 6 timed paths per layer
+    # H200 at all three m=128 shapes, job 846e25d9df09433f); <= 6 timed paths per layer
     RQPROD = ["s4s5hze", "d2s5hze", "d2s6hze", "d2s5hzem2", "s4s5hzeEH", "n256s5m1hzmEH", "n256s5m1hzm",
               "d2s5hzwP", "s4s5hzw"]
     RQKSV = {"h128s8e": 1, "h128s6e": 1, "h128s10e": 1, "h128s8em1": 1, "h128s8eg2": 1, "h128s10eg2": 1}  # variant -> KS
@@ -9223,7 +9224,7 @@ void rgemv(at::Tensor W, at::Tensor x, at::Tensor out, int64_t M) {
 // + 1 producer warp (TMA, RK_QS-stage ring of 24 KB: hi 8 KB | lo 8 KB | x 8 KB, 128B swizzle) + 1 helper warp.
 // Tile = 64 W rows x 64 tokens; split-K over S CTAs per tile (grid 4 x ntt x S <= 128: one CTA per SM, all resident).
 // Each CTA ADDS its partial tile into the FP32 output (smem-transposed, 16 B red.add.v4.f32): the reduction is
-// ORDER-DEPENDENT (run-to-run differences ~1e-7 relative, inside the router tolerance). The output is
+// ORDER-DEPENDENT (run-to-run differences ~1e-7 relative, inside the router tolerance; POD item 6). The output is
 // cleared inside the kernel: every CTA's helper warp reads the grid counter of this grid size (generation =
 // value / grid: earlier launches' counts are complete and this CTA has not counted yet), clears its slice of out,
 // counts it (release), waits (acquire, 2 s limit -> trap) until every CTA has counted, and releases the consumers'
@@ -9439,7 +9440,7 @@ void rk(at::Tensor Wc, at::Tensor x, at::Tensor out, int64_t S, at::Tensor zc) {
     # CUTLASS 3.x sm90 TMA warp-specialized PINGPONG GEMM, persistent tile scheduler, swap-AB (D^T = W x^T: A = W [N, K]
     # row-major, B = x [M, K] as a K x M column-major matrix, D column-major [N, M] = out [M, N] row-major), BF16 in/out,
     # FP32 accumulate, tile 128 (W rows) x 64 (tokens) x 64, cluster 1x1. Headers: CUTLASS bundled with flashinfer (in the
-    # SGLang image). Sweep (54 configs x 8 shapes): it beats cuBLAS only for pooler m=256 (31.3 vs 34.5 us
+    # SGLang image). Sweep (pod/cutsweep.py, 54 configs x 8 shapes): it beats cuBLAS only for pooler m=256 (31.3 vs 34.5 us
     # raw); a missing header or a failed build just leaves the route out.
     CUTLASS_LAYERS = set() if _PRUNE else {"pooler"}   # layers that get the CUTLASS candidate (scored m=256 only)
     CUTLASS_BUILD_TIMEOUT = 170   # seconds prepare waits for the CUTLASS build (main build ~25 s; prepare's limit is 300 s)
@@ -10136,7 +10137,7 @@ void cut_gemm(at::Tensor W, at::Tensor x, at::Tensor out, at::Tensor ws) {
         state["old_paths"] = old_paths
         sk2_prepare(weights, state)
         if cut_thread is not None:
-            cut_thread.join(timeout=CUTLASS_BUILD_TIMEOUT)   # ~70-80 s on an H200; never let it threaten prepare's limit
+            cut_thread.join(timeout=CUTLASS_BUILD_TIMEOUT)   # ~70-80 s on an H200 pod; never let it threaten prepare's limit
             if cut_thread.is_alive():
                 print(f"[okc] CUTLASS route off: build still running after {CUTLASS_BUILD_TIMEOUT} s", file=sys.stderr)
         if _cut_ext is not None and (cut_thread is None or not cut_thread.is_alive()):
@@ -10321,7 +10322,7 @@ void cut_gemm(at::Tensor W, at::Tensor x, at::Tensor out, at::Tensor ws) {
         return _run_torch(x, layer, m, n, k, state)
 
 
-    RK_SPLITS = {1: 16, 2: 16, 3: 10, 4: 8}   # token tiles of 64 -> K splits (grid 4 x ntt x S <= 128; from a sweep)
+    RK_SPLITS = {1: 16, 2: 16, 3: 10, 4: 8}   # token tiles of 64 -> K splits (grid 4 x ntt x S <= 128; pod/rk.py sweep)
 
 
     def _rk_splits(m, nsm=132):
@@ -10924,7 +10925,7 @@ case 1: return ol_launch_t<128,64,5,3,1,1,2>(x,w,out,m,stream,query); default:re
         ku = 128 // s // wk
         return data.view(16, s, wk, ku, 8, 32, 8).permute(3, 1, 0, 2, 4, 5, 6).contiguous()
 
-    RT12 = False   # the c12 router kernel is exact but 0.8-1.9 us slower than the raw routertail on the judge's bake
+    RT12 = False   # E240-E24x: the c12 router kernel is exact but 0.8-1.9 us slower than the raw routertail on Modal and on the judge's bake
     RT12_CAP = 16   # words per (CTA, warp) escape record (word 0 = count)
 
     def _rt12_pack(r, s, wk):

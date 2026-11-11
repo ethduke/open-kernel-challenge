@@ -1,10 +1,11 @@
 # okc: problem=muse_attention_decode
+# replication copy 3 of run 1967908b112b4166; comment-only difference
 # Change by ethduke (qa, Nov 4): attn_kernel's q_len 8 QK^T in f16 accumulators, P codes by bit manipulation (as ZhimaoL's wst and vfg do, Apache-2.0). -DOKC_QK16=2.
 # The organizers' rules of Nov 3 allow FP16 QK^T and an approximated exp2 for E4M3 P. Kernels theirs.
 # ethduke (Nov 1): keell0renz/muse-open-kernel-challenge @ 8e30e1b (Apache-2.0; NOTICE and every attribution line below retained).
 # Change by ethduke (Nov 4): the q_len-8 verify kernels (ZhimaoL's wst / vfg) are built with -DZH_SCH=1, his piecewise-linear
 # (Schraudolph) exp; the organizers' rules of Nov 3 allow P in FP8 E4M3 with exp2 approximated by bit manipulation.
-# Second change by ethduke: full-layer verify stays on their vjeux kernels, which with the f16 QK^T are the faster path; wst_ct14b is not routed.
+# Second change by ethduke: full-layer verify stays on their vjeux kernels, which with the f16 QK^T are the faster path; wst_ct14b is not routed (paired check 764aaf193b51489f).
 # + keell0renz stack [bulk]: TMA bulk-reduction merge (cp.reduce.async.bulk) + 72-float workspace rows for the q_len-1 per-request kernels that are not one-tile builds (Madhavan113/ParadigmKernelChallenge c0f3460 dab77b3 012d92b, Apache-2.0)
 # + ZhimaoL/sglang okc/x-vfgpdl okc_patch/_cuda_src_wst.py, _cuda_src_vfg.py (Apache-2.0)
 # Based on github.com/vjeux/okc-2026 muse_attention_decode.py (Apache-2.0). Copied for the OKC starting point.

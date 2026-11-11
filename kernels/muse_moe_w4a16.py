@@ -1,19 +1,20 @@
 # okc: problem=muse_moe_w4a16
 # Change by ethduke (mt) on top of 874e1fd4: SwiGLU through the GPU's fast tanh, block at the end of the file. Kernels theirs.
+# scored copy of check 834c8f0e4aec4d77; comment-only
 # ethduke (Nov 1): keell0renz/muse-open-kernel-challenge @ 8e30e1b (Apache-2.0; NOTICE and every attribution line below retained)
 # plus our range fallback at the end of the file: the dedicated bs-8 build also serves 5-7 tokens once prepare's self-test
 # shows it matches the base dispatch there (else those sizes keep the base build). Change by ethduke; all kernels theirs.
-# ps1: st1f4 + a dedicated bs8 build with the ring-issuer warp (wsi; +1.2-1.7% at bs8 on the judge). Other sizes = st1f4.
-# mf_a: ms_b1_snap1 + MFIN (per-expert completion counters, no grid barrier) + B4L (single-read final) in the WGS MAIN build.
+# ps1: st1f4 + a dedicated bs8 build with the ring-issuer warp (wsi, E418; judge farm +1.2-1.7% at bs8, E447). Other sizes = st1f4.
+# mf_a: ms_b1_snap1 + MFIN (per-expert completion counters, no grid barrier) + B4L (single-read final) in the WGS MAIN build (moe-fin, harness/make_moefin.py, E300+).
 # st1f4: st1 with OKC_WGSFCI 4.
-# st1: ybf.py + OKC_WGSFCI 5 + weight-ring pacing at M <= 64.
-# ybf: cepi_u80.py + WGS ybuf in bf16 (epilogue store + final-pass reads).
-# cepi_u80: mf_all3_noab + per-unit stream-K cost U = 80 (A) / 70 (B), zhebrak SK_CEPI.
-# mf_all3_noab: mf_all3_snap1 with the in-prepare A/B off (no twin builds, no second WGS weight copy w_ns); timed kernels unchanged
-# sc6_a: ms_b1_snap1 + lossless 6-bit block scales in the WGS stages (bs >= 17).
+# st1: ybf.py + OKC_WGSFCI 5 + weight-ring pacing at M <= 64 (E372).
+# ybf: cepi_u80.py + WGS ybuf in bf16 (epilogue store + final-pass reads; harness/make_ybf.py).
+# cepi_u80: mf_all3_noab + per-unit stream-K cost U = 80 (A) / 70 (B), zhebrak SK_CEPI (harness/make_cepi.py).
+# mf_all3_noab: mf_all3_snap1 with the in-prepare A/B off (no twin builds, no second WGS weight copy w_ns); timed kernels unchanged (theory sprint FRAMEWORK.md MoE bet 1, 2026-10-30)
+# sc6_a: ms_b1_snap1 + lossless 6-bit block scales in the WGS stages (bs >= 17) (moe-scale E260+; harness/make_sc6.py).
 # draw 2
-# ms_b1: aly.py + data-flag A->B hand-off in the bs 9..16 build only.
-# ms_base: aly.py with the helper0 CUDA twin derived from CUDA_SRC at import (small-T MoE edge work).
+# ms_b1: aly.py + data-flag A->B hand-off in the bs 9..16 build only (moe-small E170+; harness/make_ms_b1.py).
+# ms_base: aly.py with the helper0 CUDA twin derived from CUDA_SRC at import (moe-small E170+, small-T MoE edge work).
 # + alygg77/okc-muse-spark-kernels kernels/muse_moe_w4a16.py (Apache-2.0, commit 6cae49a), unchanged; header below is theirs.
 # Portions (the per-thread CUDA-context bind helper; cuBLASLt plan pins) follow code posted by Matsvei (kernarc user
 # 'matvey') on agents.kernarc.com; OKC submissions are licensed under the Apache License 2.0 (llms.txt), and that
@@ -187,7 +188,7 @@ PRMT_SCALES = True
 # (the kernel gets -DOKC_DQ7=1 via _ext).
 DQ7 = True
 
-# SC6: lossless 6-bit block scales (checked on the actual weights in prepare(): every byte in 0x40..0x7F)
+# SC6 (harness/make_sc6.py): lossless 6-bit block scales (checked on the actual weights in prepare(): every byte in 0x40..0x7F)
 SC6_WGS = True      # WGS stages (bs >= 17)
 SC6_SKINNY = False   # skinny units (TINY / TINY2 / MID builds)
 SC6_ATTRS = True    # prepare() prints registers / local bytes of every build
@@ -2063,7 +2064,7 @@ __device__ void wgs_wproducer(const Params& p, Smem& S, unsigned char* ring) {
       const int u = gs >> 4, st = gs & 15;
       const int j = u >> ubl, ub = u & ((1 << ubl) - 1);
       if (n >= WGS_NS) wgs_wait(S.bars + BW_E + ws, wph ^ 1, 1000 + gs);
-      // st1 (wp2s): at M <= 64 stage n is issued only once stage n - 2 has landed (no 3-stage burst)
+      // st1 (wp2s): at M <= 64 stage n is issued only once stage n - 2 has landed (no 3-stage burst; E371 / E372)
       if (n >= 2 && p.M <= 64) { const int pn = n - 2; wgs_wait(S.bars + BW_F + pn % WGS_NS, (uint32_t)(pn / WGS_NS) & 1u, 5000 + gs); }
       uint64_t* bar = S.bars + BW_F + ws;
       const unsigned char* src = base + ((size_t)(((S.jE[j] << ubl) + ub) * 16 + st)) * (size_t)WGS_STG;
@@ -2325,7 +2326,7 @@ __device__ __forceinline__ void wgs_seg(const Params& p, Smem& S, unsigned char*
     // the 4 scale pairs ([j][h] bytes) come from one 8-byte load per stage and are built once per stage
 #if OKC_SC6W
     // SC6: 768 B of scales per piece: plane W (uint32 per thread) | plane H (uint16 per thread); the 4 scale pairs of the stage
-    // (bytes of 4 v) are built here once and stay in registers for the 4 load groups
+    // (bytes of 4 v, see harness/make_sc6.py) are built here once and stay in registers for the 4 load groups
     uint32_t sgs[4];
     {
       const int tt = wp * 32 + lane;
@@ -3197,7 +3198,7 @@ VAR_SRC = r'''
 #define OKC_WSNR 4  // partial-sum buffers between the compute warps and the helper warp
 #define OKC_NOLOAD 0
 #ifndef OKC_DF
-#define OKC_DF 1   // data-flag A->B hand-off
+#define OKC_DF 1   // data-flag A->B hand-off (harness/make_ms_df.py)
 #endif
 #define INTER_SENT_ROWS 128
 
@@ -5187,7 +5188,7 @@ __device__ __forceinline__ void wgs_seg(const Params& p, Smem& S, unsigned char*
     // the 4 scale pairs ([j][h] bytes) come from one 8-byte load per stage and are built once per stage
 #if OKC_SC6W
     // SC6: 768 B of scales per piece: plane W (uint32 per thread) | plane H (uint16 per thread); the 4 scale pairs of the stage
-    // (bytes of 4 v) are built here once and stay in registers for the 4 load groups
+    // (bytes of 4 v, see harness/make_sc6.py) are built here once and stay in registers for the 4 load groups
     uint32_t sgs[4];
     {
       const int tt = wp * 32 + lane;
@@ -6235,7 +6236,7 @@ def _sc6_unit(s):
 
 def _sc6_wgs(s):
     """SC6 WGS piece scales: [..., 1024] bytes (thread t = 8 bytes s0..s7 = [j][h]) -> [..., 768]: plane W (t * 4 B: bytes 4 v_n | piece_n,
-    n = 0..3) then plane H (t * 2 B: bytes 4 v_(4+n) | piece_(4+n)); v6 = pieces 0..2, v7 = pieces 3..5."""
+    n = 0..3) then plane H (t * 2 B: bytes 4 v_(4+n) | piece_(4+n)); v6 = pieces 0..2, v7 = pieces 3..5 (see harness/make_sc6.py)."""
     lead = s.shape[:-1]
     v = s.view(*lead, 128, 8).to(torch.int32) - 0x40
     assert int(v.min()) >= 0 and int(v.max()) <= 63
@@ -6475,7 +6476,7 @@ def _mfab(state, weights, t0):
     flush = torch.empty(64 * 1024 * 1024, dtype=torch.int32, device=dev)
     for bs in MFAB_SHAPES:
         _mfab_time(bs, {n: (exts[n], (state.get("w_ns", state["w"]) if MFAB_VARIANTS[n][1] else state["w"])) for n in names}, state, dev, flush)
-    if MFAB_L2H:   # the bs <= 4 build with and without L2 hints (the file ships them)
+    if MFAB_L2H:   # the bs <= 4 build with and without L2 hints (the file ships them: moe-small E174)
         try:
             sfxs = tuple(state.get("sfxs", state["sfx"]))
             tv = {"base": (_ext(tuple(TINY_DEFINES) + ("-DOKC_L2H=0",) + sfxs), state["w"]), "prod": (_ext(tuple(TINY_DEFINES) + sfxs), state["w"])}
@@ -6813,7 +6814,7 @@ def kernel_fn(data, state):
     return _context_parent_kernel(data, state)
 
 
-# ------------------------------------------------------- per-batch-size builds
+# ------------------------------------------------------- per-batch-size builds (generated by harness/make_ps.py)
 # The judge times a fixed set of batch sizes; each size listed here runs its own build (branching on shapes is allowed).
 # Every other size keeps the dispatch above.
 PS_SHAPES = {8: ('tiny2', {}, 't2_wsi')}
@@ -6880,7 +6881,7 @@ def kernel_fn(data, state):
     M = data["hidden_states"].shape[0]
     if ps is None or M not in ps or M > CHUNK_TOKENS:
         return _ps_parent_kernel(data, state)
-    _bind_context(data["hidden_states"])  # as the base wrapper does (fresh OS threads)
+    _bind_context(data["hidden_states"])  # as the base wrapper does (fresh OS threads, E427)
     x = data["hidden_states"].contiguous()
     ids = data["topk_ids"].to(torch.int32).contiguous()
     if ids.data_ptr() & 15:

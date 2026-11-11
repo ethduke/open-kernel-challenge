@@ -1,4 +1,5 @@
 # okc: problem=muse_prefill_layer
+# scored copy of check e75800f2219542c7; comment-only
 # ethduke (Nov 1): keell0renz/muse-open-kernel-challenge @ 8e30e1b (Apache-2.0; NOTICE and every attribution line below retained).
 # Change by ethduke, Nov 1, reverted Nov 4: ZhimaoL's prefill FMHA was built exact (ZH_EXACT True: PFMHA_EXACT, all-MUFU exp2). It is back on his
 # shipped piecewise-linear (Schraudolph) exp2. The organizers' Nov 3 kernel rules allow it: an approximated exp2 for attention's P (polynomial
@@ -11,7 +12,7 @@
 # is the same softmax arithmetic.
 # pf_n72: stack_s5_snap1.py + ZhimaoL/sglang okc/x-n72-naw b0a2c3433b okc_patch/_cuda_src_fmha.py N72 (PV and the softmax row sum as one m64n72k32 on an N-group-major V^T stage layout; gather_kp writes that layout; Apache-2.0), the commit's 23 code hunks applied verbatim.
 # + ZhimaoL/sglang okc/cand12pre okc_patch/_cuda_src_fmha.py (prefill attention fmha7, Apache-2.0) on vjeux/okc-2026 muse_prefill_layer.py as published by alygg77/okc-muse-spark-kernels (Apache-2.0).
-# + okc prefill patches: fmt=512, bnd1=128,false, ltpin, ltsweep
+# + okc prefill patches (harness/make_pf.py): fmt=512, bnd1=128,false, ltpin, ltsweep
 # Portions Copyright vjeux, from https://github.com/vjeux/okc-2026 (commit f35a41e), licensed under the Apache License 2.0.
 # Submitted by alygg77 under the Apache License 2.0 with this notice retained.
 """Muse Spark prefill layer: one transformer layer step over a batch of tokens.
