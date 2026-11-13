@@ -8,19 +8,17 @@ The kernel track closed on 5 November 2026.
 
 Speed-up compares each kernel with stock SGLang.
 The table lists my best scored run for each board.
-Ranks are the recorded provisional values from 5 November 2026.
-The organizers determine the final ranks after their test runs.
+Ranks are the final values after the organizers' review, read on 12 November 2026.
 
-| Board | Kernel file | Speed-up | Provisional rank | Job ID |
+| Board | Kernel file | Speed-up | Final rank | Job ID |
 |---|---|---|---|---|
-| Decode layer | [muse_decode_layer.py](kernels/muse_decode_layer.py) | 2.297× | 115 of 1,299 | `92b2961dcb7d4888` |
-| Attention decode | [muse_attention_decode.py](kernels/muse_attention_decode.py) | 2.731× | 85 of 1,379 | `609f3fb0074244eb` |
-| MoE, W4A16 | [muse_moe_w4a16.py](kernels/muse_moe_w4a16.py) | 2.400× | 205 of 1,425 | `fa71127eb0e844da` |
-| BF16 projections | [muse_bf16_proj.py](kernels/muse_bf16_proj.py) | 1.596× | 83 of 1,746 | `384dce8f584741df` |
-| Prefill layer | [muse_prefill_layer.py](kernels/muse_prefill_layer.py) | 1.922× | 102 of 898 | `4e0002f8678540f2` |
+| Decode layer | [muse_decode_layer.py](kernels/muse_decode_layer.py) | 2.297× | 105 of 1,296 | `92b2961dcb7d4888` |
+| Attention decode | [muse_attention_decode.py](kernels/muse_attention_decode.py) | 2.731× | 84 of 1,379 | `609f3fb0074244eb` |
+| MoE, W4A16 | [muse_moe_w4a16.py](kernels/muse_moe_w4a16.py) | 2.400× | 203 of 1,422 | `fa71127eb0e844da` |
+| BF16 projections | [muse_bf16_proj.py](kernels/muse_bf16_proj.py) | 1.596× | 79 of 1,740 | `384dce8f584741df` |
+| Prefill layer | [muse_prefill_layer.py](kernels/muse_prefill_layer.py) | 1.922× | 91 of 895 | `4e0002f8678540f2` |
 
-The recorded overall rank is **115 of 2,014**.
-The overall rank follows the decode layer board.
+The final overall rank is **93**. The organizers publish only the top of the overall board, not its total.
 The files retain the final scored code, technical comments, and experiment references.
 
 ## Best scored profile
